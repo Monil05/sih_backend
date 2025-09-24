@@ -1,3 +1,4 @@
+# ...existing code...
 from datetime import datetime
 
 def get_season_from_date(date_str: str) -> str:
@@ -27,3 +28,20 @@ def get_season_months(season: str) -> str:
     if s == 'zaid':
         return 'April–May (sowing: Apr–May, harvesting: Jul–Aug)'
     return ''
+
+# Added: returns full month name (e.g. "January") for the given date string.
+def get_month_name(date_str: str) -> str:
+    parsed = None
+    for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%Y/%m/%d'):
+        try:
+            parsed = datetime.strptime(date_str, fmt)
+            break
+        except Exception:
+            continue
+    if parsed is None:
+        try:
+            parsed = datetime.fromisoformat(date_str)
+        except Exception:
+            return ''
+    return parsed.strftime('%B')
+# ...existing code...

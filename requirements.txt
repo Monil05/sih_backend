@@ -6,3 +6,8 @@ requests
 google-generativeai
 python-multipart
 openpyxl
+aiohttp
+# --- Libraries for Database & Auth ---
+sqlalchemy
+psycopg2-binary  # Driver for PostgreSQL (best for hosting)
+passlib[bcrypt]  # For securely hashing passwords

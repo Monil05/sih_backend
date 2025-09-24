@@ -9,6 +9,7 @@ BHUWAN_GEOCODING_TOKEN = os.getenv("BHUWAN_GEOCODING_TOKEN")
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 SOILGRIDS_BASE = "https://rest.isric.org/soilgrids/v2.0/properties/query"
 
+# ...existing code...
 def _geocode_with_bhuvan(pincode: str) -> Optional[Dict[str, float]]:
     if not BHUWAN_GEOCODING_TOKEN or not pincode:
         return None
@@ -239,3 +240,12 @@ async def get_soil_type_async(
     except Exception as e:
         # safe fallback
         return {"soil_type": "Unknown", "source": "error", "details": {"error": str(e)}, "verified": False, "expected_soils": []}
+
+# Added wrapper expected by recommendation_service
+async def verify_soil(state: Optional[str], reported_soil: Optional[str], pincode: Optional[str], soil_image=None, city: Optional[str]=None) -> Dict[str, Any]:
+    """
+    Backwards-compatible wrapper:
+      recommendation_service calls verify_soil(state, soil_type, pincode, soil_image)
+    This maps to the existing get_soil_type_async signature.
+    """
+    return await get_soil_type_async(pincode=pincode, state=state, city=city, provided_soil_type=reported_soil, soil_image=soil_image)
