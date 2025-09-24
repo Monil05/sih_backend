@@ -1,0 +1,17 @@
+# VS Code
+.vscode/
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+env/
+pip-log.txt
+*.sqlite3
+
+test.py
