@@ -3,7 +3,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SQLITE_PATH = os.environ.get("DATABASE_URL") or f"sqlite:///{os.path.join(BASE_DIR, 'farmers.db')}"
+SQLITE_PATH = os.environ.get("DATABASE_URL") # or f"sqlite:///{os.path.join(BASE_DIR, 'farmers.db')}"
 
 # Engine and Base for all models — do NOT import models here to avoid circular imports
 engine = create_engine(
