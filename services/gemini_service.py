@@ -1,4 +1,4 @@
-# services/gemini_service.py
+# ...existing code...
 import os
 import re
 from typing import Dict, Any, Optional, List
@@ -8,6 +8,14 @@ try:
     import google.generativeai as genai
 except Exception:
     genai = None
+
+# lightweight image handling (optional)
+try:
+    from PIL import Image
+    from io import BytesIO
+except Exception:
+    Image = None
+    BytesIO = None
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
 if genai is not None and GEMINI_API_KEY:
@@ -170,6 +178,48 @@ _CROP_MONTH_HINTS = {
     "mustard": ("October–November", "February"),
     "groundnut": ("June–July", "September–October"),
 }
+
+# --- image classifier helper (simple, local heuristic) ---
+def classify_soil_image(image_bytes: Optional[bytes]) -> Optional[str]:
+    """
+    Lightweight local image heuristic to suggest a soil type.
+    Returns one of: "Sandy", "Clay", "Loamy" or None on failure.
+    - Requires Pillow (PIL). If PIL not available, returns None.
+    - This is a heuristic fallback; replace with real ML model when available.
+    """
+    if not image_bytes:
+        return None
+    if Image is None or BytesIO is None:
+        return None
+    try:
+        img = Image.open(BytesIO(image_bytes)).convert("RGB")
+        img = img.resize((64, 64))
+        pixels = list(img.getdata())
+        if not pixels:
+            return None
+        # compute average RGB and simple color stats
+        r_avg = sum(p[0] for p in pixels) / len(pixels)
+        g_avg = sum(p[1] for p in pixels) / len(pixels)
+        b_avg = sum(p[2] for p in pixels) / len(pixels)
+        brightness = (r_avg + g_avg + b_avg) / 3.0
+        rg_ratio = (r_avg + 1.0) / (g_avg + 1.0)
+
+        # Heuristic rules (tweak as needed)
+        # Bright, pale -> sandy
+        if brightness > 170 and rg_ratio < 1.1:
+            return "Sandy"
+        # Relatively reddish/darker -> clay
+        if r_avg > g_avg * 1.1 and brightness < 160:
+            return "Clay"
+        # Greenish / balanced -> loamy (organic content)
+        if g_avg >= r_avg and g_avg >= b_avg:
+            return "Loamy"
+        # fallback based on brightness
+        if brightness < 120:
+            return "Clay"
+        return "Loamy"
+    except Exception:
+        return None
 
 # --- build but-block (unchanged from your file) ---
 def _build_but_block(farmer_reported_soil: str,
@@ -334,7 +384,7 @@ def _fallback_response(
         parts.append((t + " " + m).strip())
     return clean_text("\n\n".join([p for p in parts if p]))
 
-# --- main exported function (overwrite) ---
+# --- main exported function (unchanged) ---
 def generate_advice(
     soil_info: Dict[str, Any],
     weather: Dict[str, Any],
