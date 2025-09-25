@@ -1,4 +1,3 @@
-# ...existing code...
 import os
 import re
 from typing import Dict, Any, Optional, List
@@ -135,7 +134,6 @@ def month_to_season(month_name: Optional[str]) -> Optional[str]:
     return None
 
 # --- NEW: detect "what month do i grow X in" (improved & robust)
-# We'll check multiple phrasings and extract crop name.
 _CROP_PATTERNS = [
     r"\bwhat\s+month\s+do\s+i\s+grow\s+([a-zA-Z0-9\s\-\&]+?)(?:\s+in\b|\s*\?|$)",
     r"\bwhen\s+do\s+i\s+grow\s+([a-zA-Z0-9\s\-\&]+?)(?:\s+in\b|\s*\?|$)",
@@ -221,7 +219,7 @@ def classify_soil_image(image_bytes: Optional[bytes]) -> Optional[str]:
     except Exception:
         return None
 
-# --- build but-block (unchanged from your file) ---
+# --- build but-block ---
 def _build_but_block(farmer_reported_soil: str,
                      soil_specific_entries: List[Dict[str, Any]],
                      ph_val: Optional[float],
@@ -294,7 +292,7 @@ def _ensure_but_block_present(out_text: str,
         return out_text.strip() + "\n\n" + block
     return out_text.strip() + "\n\n" + block
 
-# --- deterministic fallback (unchanged) ---
+# --- deterministic fallback ---
 def _fallback_response(
     confirmed: bool,
     soil_type: str,
@@ -308,7 +306,9 @@ def _fallback_response(
     farmer_reported_soil: Optional[str],
     ph_val: Optional[float],
     oc_val: Optional[float],
-    excel_service = None
+    excel_service = None,
+    # NEW PARAMETER to control temperature display
+    month_from_query: bool = False
 ) -> str:
     parts = []
     top_candidates = []
@@ -336,10 +336,16 @@ def _fallback_response(
             parts.append(note)
         ferts = _choose_fertilizers_for_soil_and_crop(soil_label, ph_val, oc_val, None)
         parts.append(f"Fertilizer: {', '.join(ferts[:2])}. Get a soil test for exact doses.")
-        if temperature is not None or month_name:
-            t = f"Current temperature: {round(float(temperature),1)}°C." if temperature is not None else ""
-            m = f"Month: {month_name}." if month_name else ""
-            parts.append((t + " " + m).strip())
+        # MODIFIED BLOCK for temperature display
+        if temperature is not None:
+            if month_from_query:
+                parts.append(f"The temperature is {round(float(temperature), 1)}°C today.")
+            else:
+                t = f"Current temperature: {round(float(temperature),1)}°C."
+                m = f"Month: {month_name}." if month_name else ""
+                parts.append((t + " " + m).strip())
+        elif month_name and not month_from_query:
+             parts.append(f"Month: {month_name}.")
         return clean_text("\n\n".join([p for p in parts if p]))
     if expected_soils:
         parts.append(f"According to our data, {soil_label} is not common in {state}. Common soils in {state}: {', '.join(expected_soils)}.")
@@ -378,13 +384,19 @@ def _fallback_response(
         parts.append("Fertilizer: Compost, Cow dung manure. Get a soil test for exact doses.")
     else:
         parts.append("Fertilizer: N-P-K (balanced), Compost. Get a soil test for exact doses.")
-    if temperature is not None or month_name:
-        t = f"Current temperature: {round(float(temperature),1)}°C." if temperature is not None else ""
-        m = f"Month: {month_name}." if month_name else ""
-        parts.append((t + " " + m).strip())
+    # MODIFIED BLOCK for temperature display
+    if temperature is not None:
+        if month_from_query:
+            parts.append(f"The temperature is {round(float(temperature), 1)}°C today.")
+        else:
+            t = f"Current temperature: {round(float(temperature),1)}°C."
+            m = f"Month: {month_name}." if month_name else ""
+            parts.append((t + " " + m).strip())
+    elif month_name and not month_from_query:
+         parts.append(f"Month: {month_name}.")
     return clean_text("\n\n".join([p for p in parts if p]))
 
-# --- main exported function (unchanged) ---
+# --- main exported function ---
 def generate_advice(
     soil_info: Dict[str, Any],
     weather: Dict[str, Any],
@@ -406,14 +418,11 @@ def generate_advice(
     All other behavior preserved.
     """
 
-    # ---------- NEW: handle crop-month question by injecting crop into 'crops' (minimal change) ----------
     crop_from_query = extract_crop_from_query(query)
     if crop_from_query:
-        # ensure the candidate-crops include this crop so the normal flow (Gemini/fallback) uses it
         try:
             if isinstance(crops, dict):
                 existing = list(crops.get("crops", []) or [])
-                # prefer canonical title-case of crop
                 if crop_from_query not in existing:
                     existing.insert(0, crop_from_query)
                 crops = {"crops": existing}
@@ -421,14 +430,12 @@ def generate_advice(
                 if crop_from_query not in crops:
                     crops = [crop_from_query] + crops
                 else:
-                    # move to front
                     crops = [crop_from_query] + [c for c in crops if c != crop_from_query]
             else:
                 crops = {"crops": [crop_from_query]}
         except Exception:
             crops = {"crops": [crop_from_query]}
-    # ---------- end crop-month handling (no early return) ----------
-
+    
     # If query explicitly mentions a month, override month_name and season
     month_override = extract_month_from_text(query) if query else None
     if month_override:
@@ -451,14 +458,23 @@ def generate_advice(
     if isinstance(soil_info, dict):
         expected_soils = soil_info.get("expected_soils") or None
 
-    # Build short structured prompt for Gemini (keeps earlier style instruction)
-    style_instruction = (
-        "You are an agricultural assistant. Short, farmer-friendly, 3-5 short paragraphs. "
-        "Flow: (A) If match confirmed: one affirmation sentence mentioning the soil. (B) 1-2 crop choices + sowing/harvest months. "
-        "(C) One short soil fact. (D) 1-2 fertilizer names (no units) + 'Get a soil test for exact doses.' "
-        "If not confirmed: start with 'According to our data...' listing common soils for the state, then same flow. "
-        "Always include current temperature and month. Avoid markdown and escaped quotes."
-    )
+    if month_override:
+        style_instruction = (
+            "You are an agricultural assistant. Short, farmer-friendly, 3-5 short paragraphs. "
+            "Flow: (A) If match confirmed: one affirmation sentence mentioning the soil. (B) 1-2 crop choices + sowing/harvest months. "
+            "(C) One short soil fact. (D) 1-2 fertilizer names (no units) + 'Get a soil test for exact doses.' "
+            "If not confirmed: start with 'According to our data...' listing common soils for the state, then same flow. "
+            "Always include the current temperature by saying 'The temperature is X°C today'. Do NOT mention the month from the input. Avoid markdown and escaped quotes."
+        )
+    else:
+        style_instruction = (
+            "You are an agricultural assistant. Short, farmer-friendly, 3-5 short paragraphs. "
+            "Flow: (A) If match confirmed: one affirmation sentence mentioning the soil. (B) 1-2 crop choices + sowing/harvest months. "
+            "(C) One short soil fact. (D) 1-2 fertilizer names (no units) + 'Get a soil test for exact doses.' "
+            "If not confirmed: start with 'According to our data...' listing common soils for the state, then same flow. "
+            "Always include current temperature and month. Avoid markdown and escaped quotes."
+        )
+    
     structured_input = {
         "state": state,
         "soil_type": soil_type,
@@ -475,7 +491,6 @@ def generate_advice(
     }
     prompt = f"{style_instruction}\n\nInput:\n{structured_input}\n\nProduce the short advice exactly in the flow."
 
-    # Try Gemini first (if configured)
     if genai is not None and GEMINI_API_KEY:
         try:
             model = genai.GenerativeModel("gemini-2.5-pro")
@@ -487,7 +502,6 @@ def generate_advice(
                 text = resp.get("output") or resp.get("text")
             if text:
                 out = clean_text(text)
-                # ensure fertilizer mention
                 low = out.lower()
                 if not any(k in low for k in ("fertil", "compost", "n-p-k", "cow dung", "dap", "urea")):
                     out = out.strip() + "\n\nFertilizer: Compost. Get a soil test for exact doses."
@@ -525,7 +539,8 @@ def generate_advice(
         farmer_reported_soil=farmer_reported_soil,
         ph_val=ph_val,
         oc_val=oc_val,
-        excel_service=excel_service
+        excel_service=excel_service,
+        month_from_query=bool(month_override)
     )
     return _ensure_but_block_present(
         out_text=base,
