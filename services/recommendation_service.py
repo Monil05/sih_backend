@@ -1,9 +1,9 @@
-# ...existing code...
 import re
 import logging
 from fastapi import APIRouter, Form, File, UploadFile, HTTPException, Depends, status
-from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
+# Make sure 'Any' is imported
+from typing import Optional, Dict, Any
 
 import models, database
 from services import gemini_service, excel_service, web_service, soil_service, weather_service, date_service
@@ -23,10 +23,17 @@ async def recommend(
     city: Optional[str] = Form(None),
     pincode: str = Form(...),
     soil_type: Optional[str] = Form(None),
-    soil_image: Optional[UploadFile] = File(None),
+    # MODIFICATION 1: Changed the signature to be more flexible
+    soil_image: Any = Form(None),
     query: Optional[str] = Form(None),
     db: Session = Depends(database.get_db),
 ) -> Dict[str, Any]:
+    
+    # MODIFICATION 2: Manually validate soil_image
+    # If it's not a real file upload (e.g., an empty string), set it to None.
+    if not isinstance(soil_image, UploadFile) or not soil_image.filename:
+        soil_image = None
+
     """
     - pincode required (6 digits).
     - If farmer provides soil_type -> use it.
@@ -49,21 +56,13 @@ async def recommend(
     provided_is_meaningful = bool(provided and str(provided).strip().lower() not in unknown_tokens)
 
     image_inferred: Optional[str] = None
-    passed_image_to_service = None
 
     # If farmer didn't give soil type and provided an image, try local classifier
     if not provided_is_meaningful and soil_image is not None:
         try:
             # read bytes from UploadFile
-            img_bytes = None
-            try:
-                img_bytes = await soil_image.read()
-            except Exception:
-                # fallback to file.read for resilience
-                try:
-                    img_bytes = soil_image.file.read()
-                except Exception:
-                    img_bytes = None
+            img_bytes = await soil_image.read()
+
             if img_bytes:
                 try:
                     image_inferred = gemini_service.classify_soil_image(img_bytes)
@@ -71,13 +70,7 @@ async def recommend(
                     logger.debug("image classifier error: %s", e)
                     image_inferred = None
                 # reset pointer so downstream services can read if needed
-                try:
-                    await soil_image.seek(0)
-                except Exception:
-                    try:
-                        soil_image.file.seek(0)
-                    except Exception:
-                        pass
+                await soil_image.seek(0)
         except Exception as e:
             logger.debug("unexpected image read error: %s", e)
             image_inferred = None
@@ -101,11 +94,9 @@ async def recommend(
 
     # If we inferred via image locally, ensure result reflects that
     if image_inferred:
-        # prefer the classifier if soil_service didn't disagree strongly
         try:
             soil_details.setdefault("details", {})
             soil_details["details"].setdefault("image_guess", image_inferred)
-            # if service returned unknown or farmer_input_unverified, reflect image source
             src = soil_details.get("source", "") or ""
             if src in ("", "farmer_input_unverified", "fallback", "error") or soil_details.get("soil_type") in (None, "Unknown"):
                 soil_details["soil_type"] = image_inferred
@@ -165,10 +156,7 @@ async def recommend(
         db.add(new_chat)
         db.commit()
     except Exception:
-        try:
-            db.rollback()
-        except Exception:
-            pass
+        db.rollback()
 
     return {
         "soil_type_detected": final_soil_type,
@@ -180,4 +168,3 @@ async def recommend(
         "recommended_crops": crops_info,
         "advice": advice
     }
-# ...existing code...
