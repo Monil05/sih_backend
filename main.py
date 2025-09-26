@@ -1,4 +1,4 @@
-# ...existing code...
+# ...existing imports...
 import os
 import sys
 from dotenv import load_dotenv
@@ -11,23 +11,29 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# Import your routers and the database engine AFTER .env is loaded
-from services import auth_service, recommendation_service, weather_service
+from services import chat_service, auth_service, recommendation_service, weather_service
 import database
+
+# Create the FastAPI app **first**
+app = FastAPI(title='Agri Backend v2 - Final Production')
+
+# Add CORS middleware
+app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
 
 # Create database tables if they don't exist
 database.Base.metadata.create_all(bind=database.engine)
 
-app = FastAPI(title='Agri Backend v2 - Final Production')
-app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_methods=['*'], allow_headers=['*'])
+# Include your routers **after app is created**
+app.include_router(chat_service.router)
+app.include_router(auth_service.router)
+app.include_router(recommendation_service.router)
 
 # simple root to avoid 404 on "/"
 @app.get("/", include_in_schema=False)
 def root():
     return {"status": "ok", "message": "Agri Backend running"}
 
-# health endpoint: tries to call optional check helpers in weather_service if present
+# health endpoint
 @app.get("/health")
 def health():
     res = {"app": "ok"}
@@ -48,8 +54,3 @@ def health():
     except Exception as e:
         res["bhuvan"] = {"ok": False, "error": str(e)}
     return res
-
-# Include the routers from your services
-app.include_router(auth_service.router)
-app.include_router(recommendation_service.router)
-# ...existing code...
